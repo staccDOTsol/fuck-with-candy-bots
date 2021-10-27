@@ -43,6 +43,18 @@ if (!fs.existsSync(CACHE_PATH)) {
   fs.mkdirSync(CACHE_PATH);
 }
 
+const uuids = [];
+
+for (var i = 0; i <= 25; i++) {
+  let aUuid;
+  if (i < 10) {
+    aUuid = '00000' + i.toString();
+  } else {
+    aUuid = '0000' + i.toString();
+  }
+  uuids.push(aUuid);
+}
+console.log(uuids);
 log.setLevel(log.levels.INFO);
 
 programCommand('upload')
@@ -563,37 +575,39 @@ programCommand('create_candy_machine')
     }
 
     const config = new PublicKey(cacheContent.program.config);
-    const [candyMachine, bump] = await getCandyMachineAddress(
-      config,
-      cacheContent.program.uuid,
-    );
-    await anchorProgram.rpc.initializeCandyMachine(
-      bump,
-      {
-        uuid: cacheContent.program.uuid,
-        price: new anchor.BN(parsedPrice),
-        itemsAvailable: new anchor.BN(Object.keys(cacheContent.items).length),
-        goLiveDate: null,
-      },
-      {
-        accounts: {
-          candyMachine,
-          wallet,
-          config: config,
-          authority: walletKeyPair.publicKey,
-          payer: walletKeyPair.publicKey,
-          systemProgram: anchor.web3.SystemProgram.programId,
-          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+    let cms = [];
+    for (var u in uuids) {
+      let uuid = uuids[u];
+      const [candyMachine, bump] = await getCandyMachineAddress(config, uuid);
+      await anchorProgram.rpc.initializeCandyMachine(
+        bump,
+        {
+          uuid: uuid,
+          price: new anchor.BN(parsedPrice),
+          itemsAvailable: new anchor.BN(Object.keys(cacheContent.items).length),
+          goLiveDate: null,
         },
-        signers: [],
-        remainingAccounts,
-      },
-    );
-    cacheContent.candyMachineAddress = candyMachine.toBase58();
+        {
+          accounts: {
+            candyMachine,
+            wallet,
+            config: config,
+            authority: walletKeyPair.publicKey,
+            payer: walletKeyPair.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+            rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          },
+          signers: [],
+          remainingAccounts,
+        },
+      );
+      log.info(
+        `create_candy_machine finished. candy machine pubkey: ${candyMachine.toBase58()}`,
+      );
+      cms.push(candyMachine.toBase58());
+    }
+    cacheContent.candyMachineAddress = JSON.stringify(cms);
     saveCache(cacheName, env, cacheContent);
-    log.info(
-      `create_candy_machine finished. candy machine pubkey: ${candyMachine.toBase58()}`,
-    );
   });
 
 programCommand('update_candy_machine')
@@ -611,28 +625,29 @@ programCommand('update_candy_machine')
 
     const walletKeyPair = loadWalletKey(keypair);
     const anchorProgram = await loadCandyProgram(walletKeyPair, env);
-
-    const candyMachine = new PublicKey(cacheContent.candyMachineAddress);
-    const tx = await anchorProgram.rpc.updateCandyMachine(
-      lamports ? new anchor.BN(lamports) : null,
-      secondsSinceEpoch ? new anchor.BN(secondsSinceEpoch) : null,
-      {
-        accounts: {
-          candyMachine,
-          authority: walletKeyPair.publicKey,
+    for (var cm in cacheContent.candyMachineAddress) {
+      const candyMachine = new PublicKey(cacheContent.candyMachineAddress[cm]);
+      const tx = await anchorProgram.rpc.updateCandyMachine(
+        lamports ? new anchor.BN(lamports) : null,
+        secondsSinceEpoch ? new anchor.BN(secondsSinceEpoch) : null,
+        {
+          accounts: {
+            candyMachine,
+            authority: walletKeyPair.publicKey,
+          },
         },
-      },
-    );
-
-    cacheContent.startDate = secondsSinceEpoch;
-    saveCache(cacheName, env, cacheContent);
-    if (date)
-      log.info(
-        ` - updated startDate timestamp: ${secondsSinceEpoch} (${date})`,
       );
-    if (lamports)
-      log.info(` - updated price: ${lamports} lamports (${price} SOL)`);
-    log.info('update_candy_machine finished', tx);
+
+      cacheContent.startDate = secondsSinceEpoch;
+      saveCache(cacheName, env, cacheContent);
+      if (date)
+        log.info(
+          ` - updated startDate timestamp: ${secondsSinceEpoch} (${date})`,
+        );
+      if (lamports)
+        log.info(` - updated price: ${lamports} lamports (${price} SOL)`);
+      log.info('update_candy_machine finished', tx);
+    }
   });
 
 programCommand('mint_one_token').action(async (directory, cmd) => {
